@@ -1,0 +1,51 @@
+html, body, div, h5, h6, p, ul, li {
+    margin: 0px;
+    padding: 0px;
+}
+
+ul, li {
+	list-style: none;
+}
+
+#app {
+    background: #09a;
+    padding: 50px;
+    .title {
+    	font-size: 40px;
+        text-align: center;
+    }
+    .back {
+    	display: inline-block;
+    	font-size: 28px;
+    	text-decoration: none;
+    	color: #fff;
+    	padding-bottom: 20px;
+    }
+    .btn-operator {
+    	padding: 10px 0;
+    	button {
+    		padding: 10px 15px;
+    		background-color: #fff;
+    		color: #000;
+    		outline: none;
+    		border: none;
+    		border-radius: 5px;
+    		cursor: pointer;
+    		margin-right: 10px;
+    	}
+    }
+    .list-wrapper {
+    	padding: 10px 20px;
+    	background-color: #f9f9f9;
+    	.list-item {
+    		display: inline-block;
+    		width: 88px;
+    		height: 44px;
+    		line-height: 44px;
+    		text-align: center;
+    		color: #fff;
+    		margin: 5px;
+    		border-radius: 4px;
+    	}
+    }
+}

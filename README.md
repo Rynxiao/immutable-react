@@ -2,9 +2,11 @@
 
 ### 写在前面
 
-这里主要介绍自己在`React`开发中的一些总结，关于`react`的渲染问题的一点研究，加上之前已经介绍过`immutable`的API，可以参看这里[Immutable日常操作之深入API](http://www.rynxiao.com/%E6%8A%80%E6%9C%AF/2017/08/29/immutable-apis.html)，算是对其的一个补充。另外本文所有代码请参看`github`仓库：[HHAHAHAHA](1)
+这里主要介绍自己在`React`开发中的一些总结，关于`react`的渲染问题的一点研究。
 
-### 渲染房间列表
+另外本人一直希望在`React`项目中尝试使用，因此在之前已经介绍过`immutable`的API，可以参看这里[Immutable日常操作之深入API](http://www.rynxiao.com/%E6%8A%80%E6%9C%AF/2017/08/29/immutable-apis.html)，算是对其的一个补充。
+
+### 一、渲染房间列表
 
 这个例子主要是写了同时渲染1000个房间，如果我添加一个房间或者修改一个房间，在`react`中不同的实现方式下`render`函数将会表现出什么样的结果？以及针对不同结果的一些思考和优化。大致的列表例子如下：生成1000个不同的房间盒子，颜色随机。
 
@@ -199,7 +201,7 @@ var deepCopy = function(obj){
     } else {
         for(var i in obj){
             newobj[i] = typeof obj[i] === 'object' ? 
-            cloneObj(obj[i]) : obj[i]; 
+            deepCopy(obj[i]) : obj[i]; 
         }
     }
     return newobj;
@@ -268,4 +270,289 @@ class RoomDetail extends React.Component {
 
 同样得可以达到效果。但是如果在`shouldComponentUpdate`中存在着多个`props`和`state`中值改变的话，就会使得比较变得十分复杂。
 
-### 应用Immutable.js来检测React中值的变化问题
+### 二、应用Immutable.js来检测React中值的变化问题
+
+在官网上来说，`immutable`提供的数据具有不变性，被称作为`Persistent data structure`，又或者是`functional data structure`，非常适用于函数式编程，相同的输入总会预期到相同的输出。
+
+#### 2.1 immutable的性能
+
+在`immutable`官网以及在知乎中谈到为什么要使用`immutable`的时候，会看到一个关键词`efficient`。高效地，在知乎上看到说是性能十分好。在对象深复制、深比较上对比与`Javascript`的普通的深复制与比较上来说更加地节省空间、提升效率。我在这里做出一个实验（这里我并不保证实验的准确性，只是为了验证一下这个说法而已）。
+
+实验方法：我这里会生成一个对象，对象有一个广度与深度，广度代表第一层对象中有多少个键值，深度代表每一个键值对应的值会有多少层。类似这样的：
+
+```json
+{
+  "width0": {"key3": {"key2": {"key1": {"key0":"val0"}}}},
+  "width1": {"key3": {"key2": {"key1": {"key0":"val0"}}}},
+  "width2": {"key3": {"key2": {"key1": {"key0":"val0"}}}},
+  // ...
+  "widthN": {"key3": {"key2": {"key1": {"key0":"val0"}}}}
+}
+```
+
+因此实际上在`javascript`对象的复制和比较上，需要遍历的次数其实是`width * deep`。
+
+在复制的问题上，我做了三种比较。
+
+- deepCopy(obj)
+- JSON.parse(JSON.stringify(obj))
+- Immutable
+
+最终得到的数据为：
+
+|           | deepCopy( μs ) | JSON( μs ) | Immutable( μs ) |
+| :-------: | :------------: | :--------: | :-------------: |
+|  20 * 50  |      4000      |    9000    |       20        |
+| 20 * 500  |      8000      |   10000    |       20        |
+| 20 * 5000 |     10000      |   14000    |       20        |
+
+在比较上，我只比较了两种方式：
+
+- javascript deep compare
+- Immutable.is
+
+代码如下：
+
+```javascript
+let startTime1 = new Date().getTime();
+let result1 = Equals.equalsObject(gObj, deepCopyObj);
+let endTime1 = new Date().getTime();
+console.log(result1);
+console.log(`deep equal time ${(endTime1-startTime1)*1000}μs`);
+
+let startTime2 = new Date().getTime();
+let result2 = is(this.state.immutableObj, this.state.aIObj);
+let endTime2 = new Date().getTime();
+console.log(result2);
+console.log(`immutable equal time ${(endTime2-startTime2)*1000}μs`);
+```
+
+最终得到的数据为：
+
+|           | deepCompare(  μs ) | Immutable.is( μs ) |
+| :-------: | :----------------: | :----------------: |
+|  20 * 5   |         0          |        7000        |
+|  20 * 50  |        1000        |       27000        |
+| 20 * 500  |        6000        |       24000        |
+| 20 * 5000 |       84000        |        5000        |
+
+数据的设计上可能太过单一，没有涉及到复杂的数据，比如说对象中再次嵌套数组，并且在每一个键值对应的值得广度上设计得也太过单一，只是一条直线下来。但是当数据量达到一定的程度时，其实也说明了一些问题。
+
+**总结：**
+
+1. 对象复制上来说，基本上`Immutable`可以说是零消耗
+2. 对象比较上，当对象深层嵌套到一定规模，反而`Immutable.is()`所用的时间会更少
+3. 但是在数据方面来说，`Immutable`并快不了多少
+
+**当然只是测试，平时中的纵向嵌套达到三层以上都会认为是比较恐怖的了。**
+
+于是我去`google`翻了翻，看看有没有什么更好的`demo`，下面我摘录一些话。
+
+[What is the benefit of immutable.js?](https://www.reddit.com/r/reactjs/comments/4tnie1/what_is_the_benefit_of_immutablejs/)
+
+> Immutable.js makes sure that the **"state" is not mutated outside** of say redux. For smaller projects, personally i don't think it is worth it but for bigger projects with more developers, using the same set of API to create new state in reduce is quite a good idea
+>
+> It was mentioned many times before that Immutable.js **has some internal optimizations**, such as storing lists as more complex tree structures which give better performance when searching for elements. It's also often pointed out that using Immutable.js enforces immutability, whereas using Object.assign or object spread and destructuring assignments relies to developers to take care of immutability. EDIT: **I haven't yet seen a good benchmark of Immutable.js vs no-library immutability.** If someone knows of one please share. Sharing is caring :)
+>
+> Immutable.js adds **two** things: **Code enforcement:** by disallowing mutations, you avoid strange errors in redux and react. Code is substantially easier to reason about. **Performance**: Mutation operations for larger objects are substantially faster as the internals are a tree structure that does not have to copy the entirety of an object every assignment. **In conclusion**: it's a no brainer for decently scoped applications; but for playing around it's not necessary.
+
+[https://github.com/reactjs/redux/issues/1262](https://github.com/reactjs/redux/issues/1262)
+
+> yes, obviously **mutable is the fastest** but it won't work with how redux expects the data, which is immutable
+
+[Performance Tweaking in React.js using Immutable.js](http://johnnyji.me/react/2016/03/03/performance-optimization-in-reactjs-using-immutablejs.html)
+
+> But wait… This is can get really ugly really fast. I can think of two general cases where your `shouldComponentUpdate` can get out of hand.
+>
+> ```Javascript
+> // Too many props and state to check!
+>
+>   shouldComponentUpdate(nextProps, nextState) {
+>     return (
+>       this.props.message !== nextProps.message ||
+>       this.props.firstName !== nextProps.firstName ||
+>       this.props.lastName !== nextProps.lastName ||
+>       this.props.avatar !== nextProps.avatar ||
+>       this.props.address !== nextProps.address ||
+>       this.state.componentReady !== nextState.componentReady
+>       // etc...
+>     );
+>   }
+> ```
+
+是的，我并没有得出`Immutable`在性能上一定会很快的真实数据。但是不得不提到的是他在配合`Redux`使用的时候的一个天然优势——数据是不变的。并且在最后一个链接中也提到，在配合`React`使用中通过控制`shouldComponentUpdate`来达到优化项目的目的。
+
+**however，Let's write some examples about immutable used in react to make sense.**
+
+#### 2.2 房间列表加入Immutable
+
+在父组件中的改变：
+
+```javascript
+constructor(props) {
+  	super(props);
+  	this.addRoom = this.addRoom.bind(this);
+  	this.modifyRoom = this.modifyRoom.bind(this);
+  	this.state = {
+      	// roomList: this.generateRooms()
+      	roomList: fromJS(this.generateRooms()),
+      	newRoom: 0
+    };
+}
+
+addRoom() {
+  	// let newRoom = { number: `newRoom${++this.state.newRoom}`, backgroundColor: '#f00' };
+	// let newList = this.state.roomList;
+	// newList.push(newRoom);
+  	let newRoom = Map({ number: `newRoom${++this.state.newRoom}`, backgroundColor: '#f00' });
+  	let newList = this.state.roomList.push(newRoom);
+  	this.setState({ roomList: newList });
+}
+
+modifyRoom() {
+  	// let newList = [...this.state.roomList];
+  	// newList[0] = { number: 'HAHA111', backgroundColor: '#0f0' };
+  	let list = this.state.roomList;
+  	let newList = list.update(0, () => {
+      	return Map({ number: 'HAHA111', backgroundColor: '#0f0' });
+    });
+  	this.setState({ roomList: newList });
+}
+```
+
+子组件中：
+
+```javascript
+shouldComponentUpdate(nextProps, nextState) {
+    return !is(formJS(this.props), fromJS(nextProps)) || 
+      	   !is(fromJS(this.state), fromJS(nextState));
+}
+```
+
+将数据源用`Immutable`初始化之后，之后再进行的数据改变都只要遵守`ImmutableJS`的相关API即可，就可以保证数据的纯净性，每次返回的都是新的数据。与源数据的比较上就不可能会存在改变源数据相关部分之后，由于引用相等而导致数据不相等的问题。
+
+### 三、在Redux中运用immutable
+
+我在项目底下新建了一个项目目录`redux-src`，同时在项目中增加了热更新。新建了`webpack.config.redux.js`，专门用来处理新加的`redux`模块。具体代码可以上`github`上面去看。因此新的目录结构如下：
+
+![redux-tree](./IRScreen/redux-tree.png)
+
+`webpack.config.redux.js`文件如下：
+
+```javascript
+
+'use strict';
+var webpack = require("webpack");
+var ExtractTextPlugin = require("extract-text-webpack-plugin");  //css单独打包
+
+module.exports = {
+    devtool: 'eval-source-map',
+
+    entry: [
+        __dirname + '/redux-src/entry.js', //唯一入口文件
+        "webpack-dev-server/client?http://localhost:8888",
+        "webpack/hot/dev-server"
+    ],
+    
+    output: {
+        path: __dirname + '/build', //打包后的文件存放的地方
+        filename: 'bundle.js',      //打包后输出文件的文件名
+        publicPath: '/build/'
+    },
+
+    module: {
+        loaders: [
+            { test: /\.js$/, loader: "react-hot!jsx!babel", include: /src/},
+            { test: /\.css$/, loader: ExtractTextPlugin.extract("style", "css!postcss")},
+            { test: /\.scss$/, loader: ExtractTextPlugin.extract("style", "css!postcss!sass")},
+            { test: /\.(png|jpg)$/, loader: 'url?limit=8192'}
+        ]
+    },
+
+    postcss: [
+        require('autoprefixer')    //调用autoprefixer插件,css3自动补全
+    ],
+
+    plugins: [
+        new ExtractTextPlugin('main.css'),
+        new webpack.HotModuleReplacementPlugin()
+    ]
+}
+```
+
+在项目中运行`npm run redux`，在浏览器输入`localhost:8888`即可看到最新的模块。
+
+这里关于如何在`react`中使用`redux`，这里就不多说了，如果不明白，可以去看 [http://cn.redux.js.org/ ](http://cn.redux.js.org/)或者到我之前写的 [redux的一个小demo](http://blog.csdn.net/yuzhongzi81/article/details/51880577)中去看。
+
+重点说说如何在`reducer`中使用`Immutable`，以及在`List.js`中如何通过发送`Action`来改变`store`。
+
+#### redux-src/redux/reducers/index.js
+
+```javascript
+import { fromJS } from 'immutable';
+import { combineReducers } from 'redux';
+
+import { ADD_ROOM, MODIFY_ROOM, MODIFY_NEWROOM_NUM } from '../const';
+import { addRoom, modifyRoom, modifyNewRoomNum } from '../actions';
+
+// ... generateRooms()
+
+const initialState = fromJS({
+	roomList: generateRooms(),
+	newRoom: 0
+});
+
+function rooms(state = initialState, action) {
+	switch(action.type) {
+		case ADD_ROOM: 
+			return state.updateIn(['roomList'], list => list.push(action.room));
+		case MODIFY_ROOM:
+			return state.updateIn(['roomList', 0], room => action.room);
+		case MODIFY_NEWROOM_NUM:
+			return state.updateIn(['newRoom'], num => ++num);
+		default:
+			return state;
+	}
+}
+
+export default combineReducers({
+	rooms
+});
+```
+
+跟之前`List.js`中的`state`中声明的最开始状态一样。这里依旧维持一个最开始的房间列表以及一个新增房间的序号数。只不过这里的最初状态是通过`Immutable.js`处理过的，所以在`reducer`中的所有操作都必须按照其`API`来。
+
+#### redux-src/components/List.js
+
+其实这个文件也没有作多处修改，基本可以看引入了`immutable`的`state`管理的`Detail.js`。只是在操作上显得更加简单了。
+
+```javascript
+addRoom() {
+  	let { newRoom, onAddRoom, onModifyRoomNum } = this.props;
+  	let room = Map({ number: `newRoom${newRoom}`, backgroundColor: '#f00' });
+  	onAddRoom(room);
+  	onModifyRoomNum();
+}
+
+modifyRoom() {
+  	let { onModifyRoom } = this.props;
+  	let room = Map({ number: 'HAHA111', backgroundColor: '#0f0' });
+  	onModifyRoom(room);
+}
+```
+
+#### 监控图
+
+运用`Redux-DevTools`工具可以清楚地看出当前`redux`中的数据变化，以及操作。
+
+日志模式：
+
+![reduxDevToolsLog](./IRScreen/reduxDevToolsLog.png)
+
+监控模式：
+
+![reduxDevToolsInspector](./IRScreen/reduxDevToolsInspector.png)
+
+#### 总结
+
+运用`redux`的好处就是全局数据可控。在`redux`中运用`immutable data`也是`redux`所提倡的，我们不再会因为值没有深拷贝而找不到值在何处何时发生了变化的情况，接而引发的就是组件莫名其妙地不会`re-render`，同时由于`immutable.js`在值复制上的高效性，因此在性能上来说，会比用传统`javascript`中的深拷贝上来说提升会很多。

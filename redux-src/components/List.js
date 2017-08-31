@@ -1,5 +1,7 @@
 import React from 'react';
-import { fromJS, Map, is } from 'immutable';
+import { connect } from 'react-redux';
+import { addRoom, modifyRoom, modifyNewRoomNum } from '../redux/actions';
+import { is, fromJS, Map } from 'immutable';
 
 class RoomDetail extends React.Component {
 
@@ -16,7 +18,6 @@ class RoomDetail extends React.Component {
 		let room = this.props.room;
 		let backgroundColor = room.get('backgroundColor');
 		let number = room.get('number');
-		console.log(`.No${number}`);
 
 		return (
 			<li className="list-item" style={{ backgroundColor: backgroundColor }}>{ number }</li>
@@ -25,51 +26,25 @@ class RoomDetail extends React.Component {
 
 }
 
-export default class Detail extends React.Component {
-
-	randomNum(min, max) {
-		return Math.random() * (max - min) + min;
-	}
-
-	generateColor() {
-		let r = Math.floor(this.randomNum(70, 255));
-		let g = Math.floor(this.randomNum(70, 255));
-		let b = Math.floor(this.randomNum(70, 255));
-		let a = this.randomNum(0.8, 1).toFixed(2);
-		return `rgba(${r},${g},${b},${a})`;
-	}
-
-	generateRooms() {
-		let roomList = [];
-		for (let i = 0; i < 1000; i++) {
-			let num = i < 10 ? `00${i}` : i < 100 ? `0${i}` : i;
-			roomList.push({ number: `room${num}`, backgroundColor: this.generateColor() });
-		}
-		return roomList;
-	}
+class List extends React.Component {
 
 	constructor(props) {
 		super(props);
 		this.addRoom = this.addRoom.bind(this);
 		this.modifyRoom = this.modifyRoom.bind(this);
-		this.state = {
-			roomList: fromJS(this.generateRooms()),
-			newRoom: 0
-		};
 	}
 
 	addRoom() {
-		let newRoom = Map({ number: `newRoom${++this.state.newRoom}`, backgroundColor: '#f00' });
-		let newList = this.state.roomList.push(newRoom);
-		this.setState({ roomList: newList });
+		let { newRoom, onAddRoom, onModifyRoomNum } = this.props;
+		let room = Map({ number: `newRoom${newRoom}`, backgroundColor: '#f00' });
+		onAddRoom(room);
+		onModifyRoomNum();
 	}
 
 	modifyRoom() {
-		let list = this.state.roomList;
-		let newList = list.update(0, () => {
-			return Map({ number: 'HAHA111', backgroundColor: '#0f0' });
-		});
-		this.setState({ roomList: newList });
+		let { onModifyRoom } = this.props;
+		let room = Map({ number: 'HAHA111', backgroundColor: '#0f0' });
+		onModifyRoom(room);
 	}
 
 	render() {
@@ -83,7 +58,7 @@ export default class Detail extends React.Component {
                 </div>
                 <ul className="list-wrapper">
                 	{
-                		this.state.roomList.map((room, index) => {
+                		this.props.roomList && this.props.roomList.map((room, index) => {
                 			return <RoomDetail key={ `roomDetail${index}` } room={ room } />
                 		})
                 	}
@@ -92,3 +67,31 @@ export default class Detail extends React.Component {
 		);
 	}
 }
+
+const mapStateToProps = state => {
+	return {
+		roomList: state.rooms.get('roomList'),
+		newRoom: state.rooms.get('newRoom')
+	};
+}
+
+const mapDispatchToProps = dispatch => {
+	return {
+		onAddRoom: room => {
+			dispatch(addRoom(room));
+		},
+		onModifyRoom: room => {
+			dispatch(modifyRoom(room));
+		}, 
+		onModifyRoomNum: () => dispatch(modifyNewRoomNum())
+	}
+}
+
+export default connect(mapStateToProps, mapDispatchToProps)(List);
+
+
+
+
+
+
+
